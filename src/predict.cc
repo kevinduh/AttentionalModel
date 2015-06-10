@@ -9,6 +9,7 @@
 
 #include "bitext.h"
 #include "attentional.h"
+#include "utils.h"
 
 using namespace cnn;
 using namespace std;
@@ -44,6 +45,8 @@ int main(int argc, char** argv) {
   Dict target_vocab;
   ia & source_vocab;
   ia & target_vocab;
+  source_vocab.Freeze();
+  target_vocab.Freeze();
 
   Model model;
   AttentionalModel attentional_model(model, source_vocab.size(), target_vocab.size());
@@ -51,16 +54,40 @@ int main(int argc, char** argv) {
   ia & attentional_model;
   ia & model;
 
-  cout << source_vocab.Convert(3) << endl;
+  WordId ktSOS = target_vocab.Convert("<s>");
+  WordId ktEOS = target_vocab.Convert("</s>");
 
-  /*for (unsigned i = 0; i < bitext.size(); ++i) { 
-    vector<WordId> source_sentence = bitext.source_sentences[i];
+  string line;
+  for (; getline(cin, line);) {
+    vector<string> tokens = tokenize(line, " ");
+    vector<WordId> source(tokens.size());
+    for (unsigned i = 0; i < tokens.size(); ++i) {
+      source[i] = source_vocab.Convert(tokens[i]);
+    }
+    cerr << "Read source sentence: ";
+    for (unsigned i = 0; i < tokens.size(); ++i) {
+      if (i != 0) {
+        cerr << " ";
+      }
+      cerr << tokens[i];
+    }
+    cerr << endl;
+
     ComputationGraph hg;
-    attentional_model.BuildGraph(source_sentence, target_sentence, hg);
+    vector<WordId> target = attentional_model.Translate(source, ktSOS, ktEOS, 10, hg);
+    cout << "Translation: ";
+    for (unsigned i = 0; i < target.size(); ++i) {
+      if (i != 0) {
+        cout << " ";
+      }
+      cout << target_vocab.Convert(target[i]);
+    }
+    cout << endl;
+
     if (ctrlc_pressed) {
       break;
-    } 
-  }*/
+    }
+  }
 
   return 0;
 }

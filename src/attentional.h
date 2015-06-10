@@ -6,12 +6,28 @@
 using namespace std;
 using namespace cnn;
 
+struct OutputState {
+  VariableIndex state;
+  VariableIndex context;
+};
+
+// A simple 2 layer MLP
+struct MLP {
+  VariableIndex i_IH;
+  VariableIndex i_Hb;
+  VariableIndex i_HO;
+  VariableIndex i_Ob;
+};
+
 class AttentionalModel {
 public:
   AttentionalModel(Model& model, unsigned src_vocab_size, unsigned tgt_vocab_size);
   vector<VariableIndex> BuildForwardAnnotations(const vector<WordId>& sentence, ComputationGraph& hg);
   vector<VariableIndex> BuildReverseAnnotations(const vector<WordId>& sentence, ComputationGraph& hg);
   vector<VariableIndex> BuildAnnotationVectors(const vector<VariableIndex>& forward_contexts, const vector<VariableIndex>& reverse_contexts, ComputationGraph& hg);
+  OutputState GetNextOutputState(const VariableIndex& prev_state, const vector<VariableIndex>& annotations, const MLP& aligner, ComputationGraph& hg);
+  VariableIndex ComputeOutputDistribution(const WordId prev_word, const VariableIndex state, const VariableIndex context, const MLP& final, ComputationGraph& hg);
+  vector<WordId> Translate(const vector<WordId>& source, WordId kSOS, WordId kEOS, unsigned max_length, ComputationGraph& hg);
   VariableIndex BuildGraph(const vector<WordId>& source, const vector<WordId>& target, ComputationGraph& hg);
   vector<unsigned&> GetParams();
 private:
@@ -46,4 +62,3 @@ private:
     ar & final_hidden_dim;
   }
 };
-
