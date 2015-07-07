@@ -2,12 +2,15 @@
 #include <boost/archive/text_oarchive.hpp>
 #include "cnn/cnn.h"
 #include "cnn/lstm.h"
+#include "kbestlist.h"
 
 using namespace std;
 using namespace cnn;
 
 struct OutputState {
+  // State is the LSTM state
   VariableIndex state;
+  // Context is a weighted sum of annotation vectors
   VariableIndex context;
 };
 
@@ -19,17 +22,27 @@ struct MLP {
   VariableIndex i_Ob;
 };
 
+struct PartialHypothesis {
+  vector<WordId> hyp;
+  OutputState os;
+};
+
 class AttentionalModel {
 public:
   AttentionalModel(Model& model, unsigned src_vocab_size, unsigned tgt_vocab_size);
   vector<VariableIndex> BuildForwardAnnotations(const vector<WordId>& sentence, ComputationGraph& hg);
   vector<VariableIndex> BuildReverseAnnotations(const vector<WordId>& sentence, ComputationGraph& hg);
   vector<VariableIndex> BuildAnnotationVectors(const vector<VariableIndex>& forward_contexts, const vector<VariableIndex>& reverse_contexts, ComputationGraph& hg);
-  OutputState GetNextOutputState(const VariableIndex& prev_state, const vector<VariableIndex>& annotations, const MLP& aligner, ComputationGraph& hg);
+  OutputState GetNextOutputState(const VariableIndex& context, const vector<VariableIndex>& annotations, const MLP& aligner, ComputationGraph& hg, vector<float>* out_alignment = NULL);
   VariableIndex ComputeOutputDistribution(const WordId prev_word, const VariableIndex state, const VariableIndex context, const MLP& final, ComputationGraph& hg);
-  vector<WordId> Translate(const vector<WordId>& source, WordId kSOS, WordId kEOS, unsigned max_length, ComputationGraph& hg);
   VariableIndex BuildGraph(const vector<WordId>& source, const vector<WordId>& target, ComputationGraph& hg);
   vector<unsigned&> GetParams();
+
+  vector<vector<float> > Align(const vector<WordId>& source, const vector<WordId>& target);
+  vector<WordId> SampleTranslation(const vector<WordId>& source, WordId kSOS, WordId kEOS, unsigned max_length);
+  vector<WordId> Translate(const vector<WordId>& source, WordId kSOS, WordId kEOS, unsigned beam_size, unsigned max_length);
+  KBestList<vector<WordId> > TranslateKBest(const vector<WordId>& source, WordId kSOS, WordId kEOS, unsigned k, unsigned beam_size, unsigned max_length);
+
 private:
   LSTMBuilder forward_builder, reverse_builder, output_builder;
   LookupParameters* p_Es; // source language word embedding matrix
@@ -46,11 +59,11 @@ private:
   Parameters* p_fOb; // Same, output bias
 
   unsigned lstm_layer_count = 2;
-  unsigned embedding_dim = 23; // Dimensionality of both source and target word embeddings. For now these are the same.
-  unsigned half_annotation_dim = 13; // Dimensionality of h_forward and h_backward. The full h has twice this dimension.
-  unsigned output_state_dim = 29; // Dimensionality of s_j, the state just before outputing target word y_j
-  unsigned alignment_hidden_dim = 31; // Dimensionality of the hidden layer in the alignment FFNN
-  unsigned final_hidden_dim = 37; // Dimensionality of the hidden layer in the "final" FFNN
+  unsigned embedding_dim = 101; // Dimensionality of both source and target word embeddings. For now these are the same.
+  unsigned half_annotation_dim = 501; // Dimensionality of h_forward and h_backward. The full h has twice this dimension.
+  unsigned output_state_dim = 103; // Dimensionality of s_j, the state just before outputing target word y_j
+  unsigned alignment_hidden_dim = 97; // Dimensionality of the hidden layer in the alignment FFNN
+  unsigned final_hidden_dim = 107; // Dimensionality of the hidden layer in the "final" FFNN
 
   friend class boost::serialization::access;
   template<class Archive> void serialize(Archive& ar, const unsigned int) {

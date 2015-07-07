@@ -20,6 +20,7 @@
 
 using namespace std;
 using namespace cnn;
+using namespace cnn::expr;
 
 bool ctrlc_pressed = false;
 void ctrlc_handler(int signal) {
@@ -84,14 +85,14 @@ LSTMLanguageModel::LSTMLanguageModel(Model& model, unsigned layer_count, unsigne
 }
 
 VariableIndex LSTMLanguageModel::BuildGraph(const vector<unsigned>& sentence, ComputationGraph& hg) {
-  builder.new_graph(&hg);
+  builder.new_graph(hg);
   builder.start_new_sequence();
   VariableIndex i_R = hg.add_parameters(p_R);
   VariableIndex i_b = hg.add_parameters(p_b);
   vector<VariableIndex> errors;
   for (unsigned t = 0; t < sentence.size() - 1; ++t) {
     VariableIndex i_x_t = hg.add_lookup(p_c, sentence[t]);
-    VariableIndex i_y_t = builder.add_input(i_x_t, &hg);
+    VariableIndex i_y_t = builder.add_input(Expression(&hg, i_x_t)).i;
     VariableIndex i_r_t = hg.add_function<AffineTransform>({i_b, i_R, i_y_t});
     VariableIndex error = hg.add_function<PickNegLogSoftmax>({i_r_t}, sentence[t + 1]);
     errors.push_back(error);
@@ -103,7 +104,7 @@ VariableIndex LSTMLanguageModel::BuildGraph(const vector<unsigned>& sentence, Co
 
 vector<unsigned> LSTMLanguageModel::SampleSentence(unsigned kSOS, unsigned kEOS, unsigned max_length) {
   ComputationGraph hg;
-  builder.new_graph(&hg);
+  builder.new_graph(hg);
   builder.start_new_sequence();
   VariableIndex i_R = hg.add_parameters(p_R);
   VariableIndex i_b = hg.add_parameters(p_b);
@@ -112,7 +113,7 @@ vector<unsigned> LSTMLanguageModel::SampleSentence(unsigned kSOS, unsigned kEOS,
   unsigned prev_word = kSOS;
   while (prev_word != kEOS && sentence.size() < max_length) {
     VariableIndex i_x_t = hg.add_lookup(p_c, prev_word);
-    VariableIndex i_y_t = builder.add_input(i_x_t, &hg);
+    VariableIndex i_y_t = builder.add_input(Expression(&hg, i_x_t)).i;
     VariableIndex i_r_t = hg.add_function<AffineTransform>({i_b, i_R, i_y_t});
     hg.add_function<Softmax>({i_r_t});
     vector<float> dist = as_vector(hg.incremental_forward()); 

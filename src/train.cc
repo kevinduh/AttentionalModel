@@ -6,6 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <csignal>
+#include <algorithm>
 
 #include "bitext.h"
 #include "attentional.h"
@@ -16,11 +17,30 @@ using namespace std;
 bool ctrlc_pressed = false;
 void ctrlc_handler(int signal) {
   if (ctrlc_pressed) {
+    cerr << "Exiting..." << endl;
     exit(1);
   }
   else {
+    cerr << "Ctrl-c pressed!" << endl;
     ctrlc_pressed = true;
   }
+}
+
+template <class RNG>
+void shuffle(Bitext& bitext, RNG& g) {
+  vector<unsigned> indices(bitext.size(), 0);
+  for (unsigned i = 0; i < bitext.size(); ++i) {
+    indices[i] = i;
+  }
+  shuffle(indices.begin(), indices.end(), g);
+  vector<vector<WordId> > source(bitext.size());
+  vector<vector<WordId> > target(bitext.size());
+  for (unsigned i = 0; i < bitext.size(); ++i) {
+    source[i] = bitext.source_sentences[i];
+    target[i] = bitext.target_sentences[i];
+  }
+  bitext.source_sentences = source;
+  bitext.target_sentences = target;
 }
 
 int main(int argc, char** argv) {
@@ -35,18 +55,24 @@ int main(int argc, char** argv) {
   Bitext bitext;
   ReadCorpus(corpus_filename, bitext, true);
   cerr << "Read " << bitext.size() << " lines from " << corpus_filename << endl;
-  cerr << "Vocab size: " << bitext.source_vocab.size() << "/" << bitext.target_vocab.size() << endl;
-
-  const double learning_rate = 1.0e-1;
+  cerr << "Vocab size: " << bitext.source_vocab.size() << "/" << bitext.target_vocab.size() << endl; 
 
   cnn::Initialize(argc, argv);
+  std::mt19937 rndeng(42);
   Model model;
   AttentionalModel attentional_model(model, bitext.source_vocab.size(), bitext.target_vocab.size());
-  SimpleSGDTrainer sgd(&model);
+  //SimpleSGDTrainer sgd(&model, 0.0, 0.1);
+  //AdagradTrainer sgd(&model, 0.0, 0.1);
+  AdadeltaTrainer sgd(&model, 0.0);
+  //AdadeltaTrainer sgd(&model, 0.0, 1e-6, 0.992);
+  //RmsPropTrainer sgd(&model, 0.0, 0.1);
+  sgd.eta_decay = 0.05;
 
   cerr << "Training model...\n";
-  for (unsigned iteration = 0; iteration < 1000 || true; iteration++) {
-    //shuffle(corpus.begin(), corpus.end(), *rndeng);
+  unsigned minibatch_count = 0;
+  const unsigned minibatch_size = 1;
+  for (unsigned iteration = 0; iteration < 1000 || false; iteration++) {
+    shuffle(bitext, rndeng);
     double loss = 0.0;
     for (unsigned i = 0; i < bitext.size(); ++i) {
       //cerr << "Reading sentence pair #" << i << endl;
@@ -56,7 +82,10 @@ int main(int argc, char** argv) {
       attentional_model.BuildGraph(source_sentence, target_sentence, hg);
       loss += as_scalar(hg.forward());
       hg.backward();
-      sgd.update(learning_rate);
+      if (++minibatch_count == minibatch_size) {
+        sgd.update(1.0 / minibatch_size);
+        minibatch_count = 0;
+      }
       if (ctrlc_pressed) {
         break;
       }

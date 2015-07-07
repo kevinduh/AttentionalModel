@@ -4,6 +4,7 @@
 #include "cnn/training.h"
 #include "cnn/lstm.h"
 #include "utils.h"
+#include "kbestlist.h"
 
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
@@ -31,7 +32,21 @@ void ctrlc_handler(int signal) {
   }
 }
 
+int test() {
+  KBestList<string> kbest(3);
+  //kbest.add(5.0, "hello");
+  //kbest.add(4.0, "salut");
+  //kbest.add(6.0, "konnichiwa");
+  kbest.add(-1.0, "nihao");
+  kbest.add(16.0, "hola");
+
+  for (auto p : kbest.hypothesis_list()) {
+    cout << p.first << "\t" << p.second << endl;
+  }
+}
+
 int main(int argc, char** argv) {
+  return test();
   signal (SIGINT, ctrlc_handler);
 
   cnn::Initialize(argc, argv);
