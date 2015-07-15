@@ -1,25 +1,27 @@
 #include <vector>
 #include <boost/archive/text_oarchive.hpp>
 #include "cnn/cnn.h"
+#include "cnn/expr.h"
 #include "cnn/lstm.h"
 #include "kbestlist.h"
 
 using namespace std;
 using namespace cnn;
+using namespace cnn::expr;
 
 struct OutputState {
   // State is the LSTM state
-  VariableIndex state;
+  Expression state;
   // Context is a weighted sum of annotation vectors
-  VariableIndex context;
+  Expression context;
 };
 
 // A simple 2 layer MLP
 struct MLP {
-  VariableIndex i_IH;
-  VariableIndex i_Hb;
-  VariableIndex i_HO;
-  VariableIndex i_Ob;
+  Expression i_IH;
+  Expression i_Hb;
+  Expression i_HO;
+  Expression i_Ob;
 };
 
 struct PartialHypothesis {
@@ -30,12 +32,12 @@ struct PartialHypothesis {
 class AttentionalModel {
 public:
   AttentionalModel(Model& model, unsigned src_vocab_size, unsigned tgt_vocab_size);
-  vector<VariableIndex> BuildForwardAnnotations(const vector<WordId>& sentence, ComputationGraph& hg);
-  vector<VariableIndex> BuildReverseAnnotations(const vector<WordId>& sentence, ComputationGraph& hg);
-  vector<VariableIndex> BuildAnnotationVectors(const vector<VariableIndex>& forward_contexts, const vector<VariableIndex>& reverse_contexts, ComputationGraph& hg);
-  OutputState GetNextOutputState(const VariableIndex& context, const vector<VariableIndex>& annotations, const MLP& aligner, ComputationGraph& hg, vector<float>* out_alignment = NULL);
-  VariableIndex ComputeOutputDistribution(const WordId prev_word, const VariableIndex state, const VariableIndex context, const MLP& final, ComputationGraph& hg);
-  VariableIndex BuildGraph(const vector<WordId>& source, const vector<WordId>& target, ComputationGraph& hg);
+  vector<Expression> BuildForwardAnnotations(const vector<WordId>& sentence, ComputationGraph& hg);
+  vector<Expression> BuildReverseAnnotations(const vector<WordId>& sentence, ComputationGraph& hg);
+  vector<Expression> BuildAnnotationVectors(const vector<Expression>& forward_contexts, const vector<Expression>& reverse_contexts, ComputationGraph& hg);
+  OutputState GetNextOutputState(const Expression& context, const vector<Expression>& annotations, const MLP& aligner, ComputationGraph& hg, vector<float>* out_alignment = NULL);
+  Expression ComputeOutputDistribution(const WordId prev_word, const Expression state, const Expression context, const MLP& final, ComputationGraph& hg);
+  Expression BuildGraph(const vector<WordId>& source, const vector<WordId>& target, ComputationGraph& hg);
   vector<unsigned&> GetParams();
 
   vector<vector<float> > Align(const vector<WordId>& source, const vector<WordId>& target);

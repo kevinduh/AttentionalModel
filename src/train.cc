@@ -72,12 +72,14 @@ int main(int argc, char** argv) {
   unsigned minibatch_count = 0;
   const unsigned minibatch_size = 1;
   for (unsigned iteration = 0; iteration < 1000 || false; iteration++) {
+    unsigned word_count = 0;
     shuffle(bitext, rndeng);
     double loss = 0.0;
     for (unsigned i = 0; i < bitext.size(); ++i) {
       //cerr << "Reading sentence pair #" << i << endl;
       vector<WordId> source_sentence = bitext.source_sentences[i];
       vector<WordId> target_sentence = bitext.target_sentences[i];
+      word_count += bitext.target_sentences[i].size() - 1; // Minus one for <s>
       ComputationGraph hg;
       attentional_model.BuildGraph(source_sentence, target_sentence, hg);
       loss += as_scalar(hg.forward());
@@ -93,7 +95,7 @@ int main(int argc, char** argv) {
     if (ctrlc_pressed) {
       break;
     }
-    cerr << "Iteration " << iteration << " loss: " << loss << endl;
+    cerr << "Iteration " << iteration << " loss: " << loss << " (perp=" << loss/word_count << ")" << endl;
     sgd.update_epoch();
   }
 

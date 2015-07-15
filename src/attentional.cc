@@ -1,6 +1,7 @@
 #include <queue>
 #include "cnn/nodes.h"
 #include "cnn/cnn.h"
+#include "cnn/expr.h"
 #include "cnn/lstm.h"
 
 #include "kbestlist.h"
@@ -9,6 +10,7 @@
 
 using namespace std;
 using namespace cnn;
+using namespace cnn::expr;
 
 AttentionalModel::AttentionalModel(Model& model, unsigned src_vocab_size, unsigned tgt_vocab_size) {
   forward_builder = LSTMBuilder(lstm_layer_count, embedding_dim, half_annotation_dim, &model);
@@ -30,65 +32,65 @@ AttentionalModel::AttentionalModel(Model& model, unsigned src_vocab_size, unsign
   p_fOb = model.add_parameters({tgt_vocab_size});
 }
 
-vector<VariableIndex> AttentionalModel::BuildForwardAnnotations(const vector<WordId>& sentence, ComputationGraph& hg) {
-  forward_builder.new_graph(hg);
+vector<Expression> AttentionalModel::BuildForwardAnnotations(const vector<WordId>& sentence, ComputationGraph& cg) {
+  forward_builder.new_graph(cg);
   forward_builder.start_new_sequence();
-  vector<VariableIndex> forward_annotations(sentence.size());
+  vector<Expression> forward_annotations(sentence.size());
   for (unsigned t = 0; t < sentence.size(); ++t) {
-    VariableIndex i_x_t = hg.add_lookup(p_Es, sentence[t]);
-    VariableIndex i_y_t = forward_builder.add_input(Expression(&hg, i_x_t)).i;
+    Expression i_x_t = lookup(cg, p_Es, sentence[t]);
+    Expression i_y_t = forward_builder.add_input(i_x_t);
     forward_annotations[t] = i_y_t;
   }
   return forward_annotations;
 }
 
-vector<VariableIndex> AttentionalModel::BuildReverseAnnotations(const vector<WordId>& sentence, ComputationGraph& hg) {
-  reverse_builder.new_graph(hg);
+vector<Expression> AttentionalModel::BuildReverseAnnotations(const vector<WordId>& sentence, ComputationGraph& cg) {
+  reverse_builder.new_graph(cg);
   reverse_builder.start_new_sequence();
-  vector<VariableIndex> reverse_annotations(sentence.size());
+  vector<Expression> reverse_annotations(sentence.size());
   for (unsigned t = sentence.size(); t > 0; ) {
     t--;
-    VariableIndex i_x_t = hg.add_lookup(p_Es, sentence[t]);
-    VariableIndex i_y_t = reverse_builder.add_input(Expression(&hg, i_x_t)).i;
+    Expression i_x_t = lookup(cg, p_Es, sentence[t]);
+    Expression i_y_t = reverse_builder.add_input(i_x_t);
     reverse_annotations[t] = i_y_t;
   }
   return reverse_annotations;
 }
 
-vector<VariableIndex> AttentionalModel::BuildAnnotationVectors(const vector<VariableIndex>& forward_annotations, const vector<VariableIndex>& reverse_annotations, ComputationGraph& hg) {
-  vector<VariableIndex> annotations(forward_annotations.size());
+vector<Expression> AttentionalModel::BuildAnnotationVectors(const vector<Expression>& forward_annotations, const vector<Expression>& reverse_annotations, ComputationGraph& cg) {
+  vector<Expression> annotations(forward_annotations.size());
   for (unsigned t = 0; t < forward_annotations.size(); ++t) {
-    const VariableIndex& i_f = forward_annotations[t];
-    const VariableIndex& i_r = reverse_annotations[t];
-    VariableIndex i_h = hg.add_function<Concatenate>({i_f, i_r});
+    const Expression& i_f = forward_annotations[t];
+    const Expression& i_r = reverse_annotations[t];
+    Expression i_h = concatenate({i_f, i_r});
     annotations[t] = i_h;
   }
   return annotations;
 }
 
-OutputState AttentionalModel::GetNextOutputState(const VariableIndex& prev_context, const vector<VariableIndex>& annotations,
-    const MLP& aligner, ComputationGraph& hg, vector<float>* out_alignment) {
+OutputState AttentionalModel::GetNextOutputState(const Expression& prev_context, const vector<Expression>& annotations,
+    const MLP& aligner, ComputationGraph& cg, vector<float>* out_alignment) {
   const unsigned source_size = annotations.size();
 
-  VariableIndex new_state = output_builder.add_input(Expression(&hg, prev_context)).i;
-  vector<VariableIndex> unnormalized_alignments(source_size); // e_ij
+  Expression new_state = output_builder.add_input(prev_context);
+  vector<Expression> unnormalized_alignments(source_size); // e_ij
 
   for (unsigned s = 0; s < source_size; ++s) {
     double prior = 1.0;
-    VariableIndex a_input = hg.add_function<Concatenate>({new_state, annotations[s]});
-    VariableIndex a_hidden1 = hg.add_function<AffineTransform>({aligner.i_Hb, aligner.i_IH, a_input});
-    VariableIndex a_hidden2 = hg.add_function<Tanh>({a_hidden1});
-    VariableIndex a_output = hg.add_function<AffineTransform>({aligner.i_Ob, aligner.i_HO, a_hidden2});
+    Expression a_input = concatenate({new_state, annotations[s]});
+    Expression a_hidden1 = affine_transform({aligner.i_Hb, aligner.i_IH, a_input});
+    Expression a_hidden2 = tanh(a_hidden1);
+    Expression a_output = affine_transform({aligner.i_Ob, aligner.i_HO, a_hidden2});
     unnormalized_alignments[s] = a_output * prior;
   }
 
-  VariableIndex unnormalized_alignment_vector = hg.add_function<Concatenate>(unnormalized_alignments);
-  VariableIndex normalized_alignment_vector = hg.add_function<Softmax>({unnormalized_alignment_vector});
+  Expression unnormalized_alignment_vector = concatenate(unnormalized_alignments);
+  Expression normalized_alignment_vector = softmax(unnormalized_alignment_vector);
   if (out_alignment != NULL) {
-    *out_alignment = as_vector(hg.forward());
+    *out_alignment = as_vector(cg.forward());
   }
-  VariableIndex annotation_matrix = hg.add_function<ConcatenateColumns>(annotations);
-  VariableIndex context = hg.add_function<MatrixMultiply>({annotation_matrix, normalized_alignment_vector});
+  Expression annotation_matrix = concatenate_cols(annotations);
+  Expression context = annotation_matrix * normalized_alignment_vector;
 
   OutputState os;
   os.state = new_state;
@@ -96,50 +98,50 @@ OutputState AttentionalModel::GetNextOutputState(const VariableIndex& prev_conte
   return os;
 }
 
-VariableIndex AttentionalModel::ComputeOutputDistribution(const WordId prev_word, const VariableIndex state, const VariableIndex context, const MLP& final, ComputationGraph& hg) {
-  VariableIndex prev_target_embedding = hg.add_lookup(p_Et, prev_word);
-  VariableIndex final_input = hg.add_function<Concatenate>({prev_target_embedding, state, context});
-  VariableIndex final_hidden1 = hg.add_function<AffineTransform>({final.i_Hb, final.i_IH, final_input}); 
-  VariableIndex final_hidden2 = hg.add_function<Tanh>({final_hidden1});
-  VariableIndex final_output = hg.add_function<AffineTransform>({final.i_Ob, final.i_HO, final_hidden2});
+Expression AttentionalModel::ComputeOutputDistribution(const WordId prev_word, const Expression state, const Expression context, const MLP& final, ComputationGraph& cg) {
+  Expression prev_target_embedding = lookup(cg, p_Et, prev_word);
+  Expression final_input = concatenate({prev_target_embedding, state, context});
+  Expression final_hidden1 = affine_transform({final.i_Hb, final.i_IH, final_input}); 
+  Expression final_hidden2 = tanh({final_hidden1});
+  Expression final_output = affine_transform({final.i_Ob, final.i_HO, final_hidden2});
   return final_output;
 }
 
 vector<vector<float> > AttentionalModel::Align(const vector<WordId>& source, const vector<WordId>& target) {
-  ComputationGraph hg;
-  output_builder.new_graph(hg);
+  ComputationGraph cg;
+  output_builder.new_graph(cg);
   output_builder.start_new_sequence();
 
-  vector<VariableIndex> forward_annotations = BuildForwardAnnotations(source, hg);
-  vector<VariableIndex> reverse_annotations = BuildReverseAnnotations(source, hg);
-  vector<VariableIndex> annotations = BuildAnnotationVectors(forward_annotations, reverse_annotations, hg);
+  vector<Expression> forward_annotations = BuildForwardAnnotations(source, cg);
+  vector<Expression> reverse_annotations = BuildReverseAnnotations(source, cg);
+  vector<Expression> annotations = BuildAnnotationVectors(forward_annotations, reverse_annotations, cg);
 
-  VariableIndex i_aIH = hg.add_parameters(p_aIH);
-  VariableIndex i_aHb = hg.add_parameters(p_aHb);
-  VariableIndex i_aHO = hg.add_parameters(p_aHO);
-  VariableIndex i_aOb = hg.add_parameters(p_aOb);
+  Expression i_aIH = parameter(cg, p_aIH);
+  Expression i_aHb = parameter(cg, p_aHb);
+  Expression i_aHO = parameter(cg, p_aHO);
+  Expression i_aOb = parameter(cg, p_aOb);
   MLP aligner = {i_aIH, i_aHb, i_aHO, i_aOb};
 
-  VariableIndex i_fIH = hg.add_parameters(p_fIH);
-  VariableIndex i_fHb = hg.add_parameters(p_fHb);
-  VariableIndex i_fHO = hg.add_parameters(p_fHO);
-  VariableIndex i_fOb = hg.add_parameters(p_fOb);
+  Expression i_fIH = parameter(cg, p_fIH);
+  Expression i_fHb = parameter(cg, p_fHb);
+  Expression i_fHO = parameter(cg, p_fHO);
+  Expression i_fOb = parameter(cg, p_fOb);
   MLP final = {i_fIH, i_fHb, i_fHO, i_fOb};
 
-  VariableIndex i_bs = hg.add_parameters(p_bs);
-  VariableIndex i_Ws = hg.add_parameters(p_Ws);
+  Expression i_bs = parameter(cg, p_bs);
+  Expression i_Ws = parameter(cg, p_Ws);
 
-  vector<VariableIndex> output_states(target.size());
-  vector<VariableIndex> contexts(target.size());
+  vector<Expression> output_states(target.size());
+  vector<Expression> contexts(target.size());
 
-  VariableIndex zeroth_context_untransformed = hg.add_function<AffineTransform>({i_bs, i_Ws, reverse_annotations[0]});
-  VariableIndex zeroth_context = hg.add_function<Tanh>({zeroth_context_untransformed});
-  VariableIndex prev_context = zeroth_context;
+  Expression zeroth_context_untransformed = affine_transform({i_bs, i_Ws, reverse_annotations[0]});
+  Expression zeroth_context = tanh(zeroth_context_untransformed);
+  Expression prev_context = zeroth_context;
 
   vector<vector<float> > alignment;
   for (unsigned t = 1; t < target.size() + 1; ++t) {
     vector<float> a;
-    OutputState os = GetNextOutputState(prev_context, annotations, aligner, hg, &a);
+    OutputState os = GetNextOutputState(prev_context, annotations, aligner, cg, &a);
     prev_context = os.context;
     alignment.push_back(a);
   }
@@ -152,30 +154,30 @@ vector<WordId> AttentionalModel::Translate(const vector<WordId>& source, WordId 
 }
 
 KBestList<vector<WordId> > AttentionalModel::TranslateKBest(const vector<WordId>& source, WordId kSOS, WordId kEOS, unsigned k, unsigned beam_size, unsigned max_length) {
-  ComputationGraph hg;
-  output_builder.new_graph(hg);
+  ComputationGraph cg;
+  output_builder.new_graph(cg);
 
-  vector<VariableIndex> forward_annotations = BuildForwardAnnotations(source, hg);
-  vector<VariableIndex> reverse_annotations = BuildReverseAnnotations(source, hg);
-  vector<VariableIndex> annotations = BuildAnnotationVectors(forward_annotations, reverse_annotations, hg);
+  vector<Expression> forward_annotations = BuildForwardAnnotations(source, cg);
+  vector<Expression> reverse_annotations = BuildReverseAnnotations(source, cg);
+  vector<Expression> annotations = BuildAnnotationVectors(forward_annotations, reverse_annotations, cg);
 
-  VariableIndex i_aIH = hg.add_parameters(p_aIH);
-  VariableIndex i_aHb = hg.add_parameters(p_aHb);
-  VariableIndex i_aHO = hg.add_parameters(p_aHO);
-  VariableIndex i_aOb = hg.add_parameters(p_aOb);
+  Expression i_aIH = parameter(cg, p_aIH);
+  Expression i_aHb = parameter(cg, p_aHb);
+  Expression i_aHO = parameter(cg, p_aHO);
+  Expression i_aOb = parameter(cg, p_aOb);
   MLP aligner = {i_aIH, i_aHb, i_aHO, i_aOb};
 
-  VariableIndex i_fIH = hg.add_parameters(p_fIH);
-  VariableIndex i_fHb = hg.add_parameters(p_fHb);
-  VariableIndex i_fHO = hg.add_parameters(p_fHO);
-  VariableIndex i_fOb = hg.add_parameters(p_fOb);
+  Expression i_fIH = parameter(cg, p_fIH);
+  Expression i_fHb = parameter(cg, p_fHb);
+  Expression i_fHO = parameter(cg, p_fHO);
+  Expression i_fOb = parameter(cg, p_fOb);
   MLP final = {i_fIH, i_fHb, i_fHO, i_fOb};
 
-  VariableIndex i_bs = hg.add_parameters(p_bs);
-  VariableIndex i_Ws = hg.add_parameters(p_Ws);
+  Expression i_bs = parameter(cg, p_bs);
+  Expression i_Ws = parameter(cg, p_Ws);
 
-  VariableIndex zeroth_context_untransformed = hg.add_function<AffineTransform>({i_bs, i_Ws, reverse_annotations[0]});
-  VariableIndex zeroth_context = hg.add_function<Tanh>({zeroth_context_untransformed});
+  Expression zeroth_context_untransformed = affine_transform({i_bs, i_Ws, reverse_annotations[0]});
+  Expression zeroth_context = tanh(zeroth_context_untransformed);
   /* Up until here this is all boiler plate */
 
   KBestList<vector<WordId> > completed_hyps(beam_size);
@@ -192,18 +194,19 @@ KBestList<vector<WordId> > AttentionalModel::TranslateKBest(const vector<WordId>
 
       // XXX: Rebuild the whole output state sequence
       output_builder.start_new_sequence(); 
-      OutputState os = GetNextOutputState(zeroth_context, annotations, aligner, hg);
+      OutputState os = GetNextOutputState(zeroth_context, annotations, aligner, cg);
       for (WordId word : hyp) {
         assert (word != kEOS);
-        os = GetNextOutputState(os.context, annotations, aligner, hg);
+        os = GetNextOutputState(os.context, annotations, aligner, cg);
       } 
 
       // Compute, normalize, and log the output distribution
       WordId prev_word = (hyp.size() > 0) ? hyp[hyp.size() - 1] : kSOS;
-      VariableIndex unnormalized_output_distribution = ComputeOutputDistribution(prev_word, os.state, os.context, final, hg);
-      VariableIndex output_distribution = hg.add_function<Softmax>({unnormalized_output_distribution});
-      VariableIndex log_output_distribution = hg.add_function<Log>({output_distribution});
-      vector<float> dist = as_vector(hg.incremental_forward());
+      Expression unnormalized_output_distribution = ComputeOutputDistribution(prev_word, os.state, os.context, final, cg);
+      Expression output_distribution = softmax(unnormalized_output_distribution);
+      Expression log_output_distribution = log(output_distribution);
+      cerr << "HG has " << cg.nodes.size() << " nodes" << endl;
+      vector<float> dist = as_vector(cg.incremental_forward());
 
       // Take the K best-looking words
       KBestList<WordId> best_words(beam_size);
@@ -217,7 +220,7 @@ KBestList<vector<WordId> > AttentionalModel::TranslateKBest(const vector<WordId>
       for (pair<double, WordId> p : best_words.hypothesis_list()) {
         double word_score = p.first;
         WordId word = p.second;
-        OutputState new_state = GetNextOutputState(os.context, annotations, aligner, hg);
+        OutputState new_state = GetNextOutputState(os.context, annotations, aligner, cg);
         output_builder.rewind_one_step();
 
         double new_score = score + word_score;
@@ -237,40 +240,40 @@ KBestList<vector<WordId> > AttentionalModel::TranslateKBest(const vector<WordId>
 }
 
 vector<WordId> AttentionalModel::SampleTranslation(const vector<WordId>& source, WordId kSOS, WordId kEOS, unsigned max_length) {
-  ComputationGraph hg;
-  output_builder.new_graph(hg);
+  ComputationGraph cg;
+  output_builder.new_graph(cg);
   output_builder.start_new_sequence();
 
-  vector<VariableIndex> forward_annotations = BuildForwardAnnotations(source, hg);
-  vector<VariableIndex> reverse_annotations = BuildReverseAnnotations(source, hg);
-  vector<VariableIndex> annotations = BuildAnnotationVectors(forward_annotations, reverse_annotations, hg);
+  vector<Expression> forward_annotations = BuildForwardAnnotations(source, cg);
+  vector<Expression> reverse_annotations = BuildReverseAnnotations(source, cg);
+  vector<Expression> annotations = BuildAnnotationVectors(forward_annotations, reverse_annotations, cg);
 
-  VariableIndex i_aIH = hg.add_parameters(p_aIH);
-  VariableIndex i_aHb = hg.add_parameters(p_aHb);
-  VariableIndex i_aHO = hg.add_parameters(p_aHO);
-  VariableIndex i_aOb = hg.add_parameters(p_aOb);
+  Expression i_aIH = parameter(cg, p_aIH);
+  Expression i_aHb = parameter(cg, p_aHb);
+  Expression i_aHO = parameter(cg, p_aHO);
+  Expression i_aOb = parameter(cg, p_aOb);
   MLP aligner = {i_aIH, i_aHb, i_aHO, i_aOb};
 
-  VariableIndex i_fIH = hg.add_parameters(p_fIH);
-  VariableIndex i_fHb = hg.add_parameters(p_fHb);
-  VariableIndex i_fHO = hg.add_parameters(p_fHO);
-  VariableIndex i_fOb = hg.add_parameters(p_fOb);
+  Expression i_fIH = parameter(cg, p_fIH);
+  Expression i_fHb = parameter(cg, p_fHb);
+  Expression i_fHO = parameter(cg, p_fHO);
+  Expression i_fOb = parameter(cg, p_fOb);
   MLP final = {i_fIH, i_fHb, i_fHO, i_fOb};
 
-  VariableIndex i_bs = hg.add_parameters(p_bs);
-  VariableIndex i_Ws = hg.add_parameters(p_Ws);
+  Expression i_bs = parameter(cg, p_bs);
+  Expression i_Ws = parameter(cg, p_Ws);
 
-  VariableIndex zeroth_context_untransformed = hg.add_function<AffineTransform>({i_bs, i_Ws, reverse_annotations[0]});
-  VariableIndex zeroth_context = hg.add_function<Tanh>({zeroth_context_untransformed});
+  Expression zeroth_context_untransformed = affine_transform({i_bs, i_Ws, reverse_annotations[0]});
+  Expression zeroth_context = tanh(zeroth_context_untransformed);
 
-  VariableIndex prev_context = zeroth_context;
+  Expression prev_context = zeroth_context;
   vector<WordId> output;
   unsigned prev_word = kSOS;
   while (prev_word != kEOS && output.size() < max_length) {
-    OutputState os = GetNextOutputState(prev_context, annotations, aligner, hg);
-    VariableIndex log_output_distribution = ComputeOutputDistribution(prev_word, os.state, os.context, final, hg);
-    VariableIndex output_distribution = hg.add_function<Softmax>({log_output_distribution});
-    vector<float> dist = as_vector(hg.incremental_forward());
+    OutputState os = GetNextOutputState(prev_context, annotations, aligner, cg);
+    Expression log_output_distribution = ComputeOutputDistribution(prev_word, os.state, os.context, final, cg);
+    Expression output_distribution = softmax(log_output_distribution);
+    vector<float> dist = as_vector(cg.incremental_forward());
     double r = rand01();
     unsigned w = 0;
     while (true) {
@@ -287,40 +290,40 @@ vector<WordId> AttentionalModel::SampleTranslation(const vector<WordId>& source,
   return output;
 }
 
-VariableIndex AttentionalModel::BuildGraph(const vector<WordId>& source, const vector<WordId>& target, ComputationGraph& hg) {
+Expression AttentionalModel::BuildGraph(const vector<WordId>& source, const vector<WordId>& target, ComputationGraph& cg) {
   // Target should always contain at least <s> and </s>
   assert (target.size() > 2);
-  output_builder.new_graph(hg);
+  output_builder.new_graph(cg);
   output_builder.start_new_sequence();
 
-  vector<VariableIndex> forward_annotations = BuildForwardAnnotations(source, hg);
-  vector<VariableIndex> reverse_annotations = BuildReverseAnnotations(source, hg);
-  vector<VariableIndex> annotations = BuildAnnotationVectors(forward_annotations, reverse_annotations, hg);
+  vector<Expression> forward_annotations = BuildForwardAnnotations(source, cg);
+  vector<Expression> reverse_annotations = BuildReverseAnnotations(source, cg);
+  vector<Expression> annotations = BuildAnnotationVectors(forward_annotations, reverse_annotations, cg);
 
-  VariableIndex i_aIH = hg.add_parameters(p_aIH);
-  VariableIndex i_aHb = hg.add_parameters(p_aHb);
-  VariableIndex i_aHO = hg.add_parameters(p_aHO);
-  VariableIndex i_aOb = hg.add_parameters(p_aOb);
+  Expression i_aIH = parameter(cg, p_aIH);
+  Expression i_aHb = parameter(cg, p_aHb);
+  Expression i_aHO = parameter(cg, p_aHO);
+  Expression i_aOb = parameter(cg, p_aOb);
   MLP aligner = {i_aIH, i_aHb, i_aHO, i_aOb};
 
-  VariableIndex i_fIH = hg.add_parameters(p_fIH);
-  VariableIndex i_fHb = hg.add_parameters(p_fHb);
-  VariableIndex i_fHO = hg.add_parameters(p_fHO);
-  VariableIndex i_fOb = hg.add_parameters(p_fOb);
+  Expression i_fIH = parameter(cg, p_fIH);
+  Expression i_fHb = parameter(cg, p_fHb);
+  Expression i_fHO = parameter(cg, p_fHO);
+  Expression i_fOb = parameter(cg, p_fOb);
   MLP final = {i_fIH, i_fHb, i_fHO, i_fOb};
 
-  VariableIndex i_bs = hg.add_parameters(p_bs);
-  VariableIndex i_Ws = hg.add_parameters(p_Ws);
+  Expression i_bs = parameter(cg, p_bs);
+  Expression i_Ws = parameter(cg, p_Ws);
 
-  vector<VariableIndex> output_states(target.size());
-  vector<VariableIndex> contexts(target.size());
+  vector<Expression> output_states(target.size());
+  vector<Expression> contexts(target.size());
 
   // TODO: Verify that this crap corresponds to the comment below and is sane
-  VariableIndex zeroth_context_untransformed = hg.add_function<AffineTransform>({i_bs, i_Ws, reverse_annotations[0]});
-  contexts[0] = hg.add_function<Tanh>({zeroth_context_untransformed});
+  Expression zeroth_context_untransformed = affine_transform({i_bs, i_Ws, reverse_annotations[0]});
+  contexts[0] = tanh(zeroth_context_untransformed);
 
   for (unsigned t = 1; t < target.size(); ++t) {
-    OutputState os = GetNextOutputState(contexts[t - 1], annotations, aligner, hg);
+    OutputState os = GetNextOutputState(contexts[t - 1], annotations, aligner, cg);
     output_states[t] = os.state;
     contexts[t] = os.context;
   }
@@ -332,18 +335,18 @@ VariableIndex AttentionalModel::BuildGraph(const vector<WordId>& source, const v
   alpha_ij = exp(e_ij) / sum_k(exp(e_ik))
   e_ij = a(s_i-1, h_j) where a is a FFNN
   */
-  vector<VariableIndex> output_distributions(target.size() - 1);
+  vector<Expression> output_distributions(target.size() - 1);
   for (unsigned t = 1; t < target.size(); ++t) {
     WordId prev_word = target[t - 1];
-    output_distributions[t - 1] = ComputeOutputDistribution(prev_word, output_states[t], contexts[t], final, hg);
+    output_distributions[t - 1] = ComputeOutputDistribution(prev_word, output_states[t], contexts[t], final, cg);
   }
 
-  vector<VariableIndex> errors(target.size() - 1);
+  vector<Expression> errors(target.size() - 1);
   for (unsigned t = 1; t < target.size(); ++t) {
-    VariableIndex output_distribution = output_distributions[t - 1];
-    VariableIndex error = hg.add_function<PickNegLogSoftmax>({output_distribution}, target[t]);
+    Expression output_distribution = output_distributions[t - 1];
+    Expression error = pickneglogsoftmax(output_distribution, target[t]);
     errors[t - 1] = error;
   }
-  VariableIndex total_error = hg.add_function<Sum>(errors);
+  Expression total_error = sum(errors);
   return total_error;
 }

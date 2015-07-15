@@ -46,6 +46,7 @@ int test() {
 }
 
 int main(int argc, char** argv) {
+  cerr << SIZE_MAX << endl;
   return test();
   signal (SIGINT, ctrlc_handler);
 

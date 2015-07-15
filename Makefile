@@ -5,16 +5,16 @@ CNN_BUILD_DIR=$(CNN_DIR)/build
 INCS=-I$(CNN_DIR) -I$(CNN_BUILD_DIR) -I$(EIGEN)
 LIBS=-L$(CNN_BUILD_DIR)/cnn/
 FINAL=-lcnn -lboost_regex -lboost_serialization
-CFLAGS=-std=c++11 -O0 -g -ffast-math -funroll-loops
+CFLAGS=-std=c++1y -O3 -g -ffast-math -funroll-loops -mavx
 BINDIR=bin
 SRCDIR=src
 
 .PHONY: clean
-all: $(BINDIR)/lstmlm $(BINDIR)/train $(BINDIR)/predict $(BINDIR)/sandbox
+all: $(BINDIR)/lstmlm $(BINDIR)/train $(BINDIR)/predict $(BINDIR)/sandbox $(BINDIR)/align
 
-$(BINDIR)/sandbox: src/sandbox.cc src/utils.h
+$(BINDIR)/sandbox: $(BINDIR)/sandbox.o
 	mkdir -p $(BINDIR)
-	$(CC) $(CFLAGS) $(LIBS) $(INCS) $(SRCDIR)/sandbox.cc -o $(BINDIR)/sandbox $(FINAL)
+	$(CC) $(CFLAGS) $(LIBS) $(INCS) $(BINDIR)/sandbox.o -o $(BINDIR)/sandbox $(FINAL)
 
 $(BINDIR)/train: $(BINDIR)/train.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o
 	mkdir -p $(BINDIR)
@@ -24,6 +24,14 @@ $(BINDIR)/predict: $(BINDIR)/predict.o $(BINDIR)/attentional.o $(BINDIR)/bitext.
 	mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $(LIBS) $(INCS) $(BINDIR)/predict.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o -o $(BINDIR)/predict $(FINAL)
 
+$(BINDIR)/align: $(BINDIR)/align.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o
+	mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) $(LIBS) $(INCS) $(BINDIR)/align.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o -o $(BINDIR)/align $(FINAL)
+
+$(BINDIR)/sandbox.o: $(SRCDIR)/sandbox.cc src/utils.h src/kbestlist.h
+	mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) $(INCS) -c $(SRCDIR)/sandbox.cc -o $(BINDIR)/sandbox.o
+
 $(BINDIR)/train.o: $(SRCDIR)/train.cc $(SRCDIR)/attentional.h $(SRCDIR)/bitext.h
 	mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $(INCS) -c $(SRCDIR)/train.cc -o $(BINDIR)/train.o
@@ -32,7 +40,11 @@ $(BINDIR)/predict.o: $(SRCDIR)/predict.cc $(SRCDIR)/attentional.h
 	mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $(INCS) -c $(SRCDIR)/predict.cc -o $(BINDIR)/predict.o
 
-$(BINDIR)/attentional.o: $(SRCDIR)/attentional.cc $(SRCDIR)/utils.h $(SRCDIR)/attentional.h $(SRCDIR)/bitext.h
+$(BINDIR)/align.o: $(SRCDIR)/align.cc $(SRCDIR)/attentional.h
+	mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) $(INCS) -c $(SRCDIR)/align.cc -o $(BINDIR)/align.o
+
+$(BINDIR)/attentional.o: $(SRCDIR)/attentional.cc $(SRCDIR)/utils.h $(SRCDIR)/attentional.h $(SRCDIR)/bitext.h $(SRCDIR)/kbestlist.h
 	mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $(INCS) -c $(SRCDIR)/attentional.cc -o $(BINDIR)/attentional.o
 
