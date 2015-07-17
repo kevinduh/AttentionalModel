@@ -4,7 +4,6 @@
 #include "cnn/expr.h"
 #include "cnn/lstm.h"
 
-#include "kbestlist.h"
 #include "bitext.h"
 #include "attentional.h"
 
