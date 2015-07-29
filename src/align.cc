@@ -4,6 +4,8 @@
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/program_options/parsers.hpp>
+#include <boost/program_options/variables_map.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -37,6 +39,16 @@ void trim(vector<string>& tokens, bool removeEmpty) {
 }
 
 int main(int argc, char** argv) {
+
+  namespace po = boost::program_options;
+  po::variables_map vm;
+  po::options_description opts("Allowed options");
+  opts.add_options()
+    ("help","TODO...")
+    ;
+  po::store(po::parse_command_line(argc, argv, opts), vm);
+  po::notify(vm);
+
   if (argc < 2) {
     cerr << "Usage: cat source.txt | " << argv[0] << " model" << endl;
     cerr << endl;
@@ -61,9 +73,9 @@ int main(int argc, char** argv) {
   target_vocab.Freeze();
 
   Model model;
-  AttentionalModel attentional_model(model, source_vocab.size(), target_vocab.size());
-
+  AttentionalModel attentional_model;
   ia & attentional_model;
+  attentional_model.Initialize(model, source_vocab.size(), target_vocab.size());
   ia & model;
 
   WordId ksBOS = source_vocab.Convert("<s>");

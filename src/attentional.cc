@@ -11,7 +11,20 @@ using namespace std;
 using namespace cnn;
 using namespace cnn::expr;
 
-AttentionalModel::AttentionalModel(Model& model, unsigned src_vocab_size, unsigned tgt_vocab_size) {
+
+// Call order: (1) Constructor, (2) SetParams or load serialization, (3) Initialize
+void AttentionalModel::SetParams(boost::program_options::variables_map vm){
+  lstm_layer_count = vm["lstm_layer_count"].as<unsigned>();
+  embedding_dim = vm["embedding_dim"].as<unsigned>();
+  half_annotation_dim = vm["half_annotation_dim"].as<unsigned>();
+  output_state_dim = vm["output_state_dim"].as<unsigned>();
+  alignment_hidden_dim = vm["alignment_hidden_dim"].as<unsigned>();
+  final_hidden_dim = vm["final_hidden_dim"].as<unsigned>();
+}
+
+void AttentionalModel::Initialize(Model& model, unsigned src_vocab_size, unsigned tgt_vocab_size) {
+
+  GetParams();
   forward_builder = LSTMBuilder(lstm_layer_count, embedding_dim, half_annotation_dim, &model);
   reverse_builder = LSTMBuilder(lstm_layer_count, embedding_dim, half_annotation_dim, &model);
   output_builder = LSTMBuilder(lstm_layer_count, 2 * half_annotation_dim, output_state_dim, &model);
@@ -349,3 +362,15 @@ Expression AttentionalModel::BuildGraph(const vector<WordId>& source, const vect
   Expression total_error = sum(errors);
   return total_error;
 }
+
+void AttentionalModel::GetParams() const {
+  cerr << "== AttentionalModel Params == " << endl
+       << " lstm_layer= " << lstm_layer_count << endl
+       << " embedding_dim= " << embedding_dim << endl
+       << " half_annotation_dim= " << half_annotation_dim << endl
+       << " output_state_dim= " << output_state_dim << endl
+       << " alignment_hidden_dim= " << alignment_hidden_dim << endl
+       << " final_hidden_dim= " << final_hidden_dim << endl
+       << "==============================" << endl;
+
+  }

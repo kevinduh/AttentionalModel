@@ -2,6 +2,8 @@
 #include "cnn/training.h"
 
 #include <boost/archive/text_oarchive.hpp>
+#include <boost/program_options/parsers.hpp>
+#include <boost/program_options/variables_map.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -44,9 +46,24 @@ void shuffle(Bitext& bitext, RNG& g) {
 }
 
 int main(int argc, char** argv) {
-  if (argc < 2) {
-    cerr << "Usage: " << argv[0] << " corpus.txt" << endl;
-    cerr << endl;
+
+  namespace po = boost::program_options;
+  po::variables_map vm;
+  po::options_description opts("Allowed options");
+  opts.add_options()
+    ("help", "print help message")
+    ("lstm_layer_count,l", po::value<unsigned>()->default_value(1), "LSTM layer count")
+    ("embedding_dim,e", po::value<unsigned>()->default_value(51), "Dimensionality of both source and target word embeddings. For now these are the same.")
+    ("half_annotation_dim,h", po::value<unsigned>()->default_value(251), "Dimensionality of h_forward and h_backward. The full h has twice this dimension.")
+    ("output_state_dim,o", po::value<unsigned>()->default_value(53), "Dimensionality of s_j, the state just before outputing target word y_j")
+    ("alignment_hidden_dim,a", po::value<unsigned>()->default_value(47), "Dimensionality of the hidden layer in the alignment FFNN")
+    ("final_hidden_dim", po::value<unsigned>()->default_value(57), "Dimensionality of the hidden layer in the final FFNN")
+    ;
+  po::store(po::parse_command_line(argc, argv, opts), vm);
+  po::notify(vm);
+
+  if (vm.count("help") || (argc < 2)){
+    cout << opts << endl;
     exit(1);
   }
   signal (SIGINT, ctrlc_handler);
@@ -59,8 +76,11 @@ int main(int argc, char** argv) {
 
   cnn::Initialize(argc, argv);
   std::mt19937 rndeng(42);
+
   Model model;
-  AttentionalModel attentional_model(model, bitext.source_vocab.size(), bitext.target_vocab.size());
+  AttentionalModel attentional_model;
+  attentional_model.SetParams(vm);
+  attentional_model.Initialize(model, bitext.source_vocab.size(), bitext.target_vocab.size());
   //SimpleSGDTrainer sgd(&model, 0.0, 0.1);
   //AdagradTrainer sgd(&model, 0.0, 0.1);
   AdadeltaTrainer sgd(&model, 0.0);

@@ -12,6 +12,8 @@
 #include "bitext.h"
 #include "attentional.h"
 #include "utils.h"
+#include <boost/program_options/parsers.hpp>
+#include <boost/program_options/variables_map.hpp>
 
 using namespace cnn;
 using namespace std;
@@ -37,7 +39,18 @@ void trim(vector<string>& tokens, bool removeEmpty) {
 }
 
 int main(int argc, char** argv) {
-  if (argc < 2) {
+ 
+  namespace po = boost::program_options;
+  po::variables_map vm;
+  po::options_description opts("Allowed options");
+  opts.add_options()
+    ("help","TODO...")
+    ;
+  po::store(po::parse_command_line(argc, argv, opts), vm);
+  cerr << "predict 0 " << endl;
+  po::notify(vm);
+
+ if (argc < 2) {
     cerr << "Usage: cat source.txt | " << argv[0] << " model" << endl;
     cerr << endl;
     exit(1);
@@ -61,10 +74,12 @@ int main(int argc, char** argv) {
   target_vocab.Freeze();
 
   Model model;
-  AttentionalModel attentional_model(model, source_vocab.size(), target_vocab.size());
-
+  AttentionalModel attentional_model;
   ia & attentional_model;
+  attentional_model.Initialize(model, source_vocab.size(), target_vocab.size());
   ia & model;
+
+
 
   WordId ktSOS = target_vocab.Convert("<s>");
   WordId ktEOS = target_vocab.Convert("</s>");
