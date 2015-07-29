@@ -1,5 +1,6 @@
 #include "cnn/cnn.h"
 #include "cnn/training.h"
+#include "cnn/timing.h"
 
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/program_options/parsers.hpp>
@@ -57,7 +58,8 @@ int main(int argc, char** argv) {
     ("half_annotation_dim,h", po::value<unsigned>()->default_value(251), "Dimensionality of h_forward and h_backward. The full h has twice this dimension.")
     ("output_state_dim,o", po::value<unsigned>()->default_value(53), "Dimensionality of s_j, the state just before outputing target word y_j")
     ("alignment_hidden_dim,a", po::value<unsigned>()->default_value(47), "Dimensionality of the hidden layer in the alignment FFNN")
-    ("final_hidden_dim", po::value<unsigned>()->default_value(57), "Dimensionality of the hidden layer in the final FFNN")
+    ("final_hidden_dim,f", po::value<unsigned>()->default_value(57), "Dimensionality of the hidden layer in the final FFNN")
+    ("max_iteration", po::value<unsigned>()->default_value(100), "Max iterations for training")
     ;
   po::store(po::parse_command_line(argc, argv, opts), vm);
   po::notify(vm);
@@ -91,7 +93,8 @@ int main(int argc, char** argv) {
   cerr << "Training model...\n";
   unsigned minibatch_count = 0;
   const unsigned minibatch_size = 1;
-  for (unsigned iteration = 0; iteration < 1000 || false; iteration++) {
+  for (unsigned iteration = 0; iteration < vm["max_iteration"].as<unsigned>() || false; iteration++) {
+    Timer iteration_timer("time:");
     unsigned word_count = 0;
     shuffle(bitext, rndeng);
     double loss = 0.0;
@@ -115,7 +118,7 @@ int main(int argc, char** argv) {
     if (ctrlc_pressed) {
       break;
     }
-    cerr << "Iteration " << iteration << " loss: " << loss << " (perp=" << loss/word_count << ")" << endl;
+    cerr << "Iteration " << iteration << " loss: " << loss << " (perp=" << loss/word_count << ") ";
     sgd.update_epoch();
   }
 
