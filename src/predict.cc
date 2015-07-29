@@ -42,17 +42,18 @@ int main(int argc, char** argv) {
  
   namespace po = boost::program_options;
   po::variables_map vm;
-  po::options_description opts("Allowed options");
+  po::options_description opts("Usage: ./predict modelfile < input \n Allowed options");
   opts.add_options()
-    ("help","TODO...")
+    ("help","print help message")
+    ("beam_size,b", po::value<unsigned>()->default_value(10),"beam size")
+    ("max_length,m", po::value<unsigned>()->default_value(20),"max length of translation")
+    ("kbest_size,k", po::value<unsigned>()->default_value(10),"kbest list size")
     ;
   po::store(po::parse_command_line(argc, argv, opts), vm);
-  cerr << "predict 0 " << endl;
   po::notify(vm);
 
- if (argc < 2) {
-    cerr << "Usage: cat source.txt | " << argv[0] << " model" << endl;
-    cerr << endl;
+  if (vm.count("help") || (argc < 2)) {
+    cerr << opts << endl;
     exit(1);
   }
   signal (SIGINT, ctrlc_handler);
@@ -83,8 +84,13 @@ int main(int argc, char** argv) {
 
   WordId ktSOS = target_vocab.Convert("<s>");
   WordId ktEOS = target_vocab.Convert("</s>");
+  unsigned beam_size = vm["beam_size"].as<unsigned>();
+  unsigned max_length = vm["max_length"].as<unsigned>();
+  unsigned kbest_size = vm["kbest_size"].as<unsigned>();
+
 
   string line;
+  unsigned line_id = 0;
   for (; getline(cin, line);) {
     vector<string> parts = tokenize(line, "|||");
     trim(parts, false);
@@ -104,9 +110,6 @@ int main(int argc, char** argv) {
       cerr << "  Read reference: " << boost::algorithm::join(reference, " ") << endl;
     }
 
-    unsigned beam_size = 10;
-    unsigned max_length = 20;
-    unsigned kbest_size = 10; 
     KBestList<vector<WordId> > kbest = attentional_model.TranslateKBest(source, ktSOS, ktEOS, kbest_size, beam_size, max_length);
     for (auto& scored_hyp : kbest.hypothesis_list()) {
       double score = scored_hyp.first;
@@ -116,10 +119,13 @@ int main(int argc, char** argv) {
         words[i] = target_vocab.Convert(hyp[i]);
       }
       string translation = boost::algorithm::join(words, " ");
-      cout << score << "\t" << translation << endl;
+      cerr << line_id << " " << score << "\t" << translation << endl;
+      cout << translation << endl;
     }
     continue;
 
+    // TODO: Work with sampling later. Just beam search now
+    /**
     map<string, int> translations;
     for (unsigned j = 0; j < 1000; ++j) {
       vector<WordId> target = attentional_model.SampleTranslation(source, ktSOS, ktEOS, 10);
@@ -141,12 +147,14 @@ int main(int argc, char** argv) {
     }
 
     auto comp = [](const pair<int,string>& a, const pair<int,string>& b) { return a.first > b.first || (a.first == b.first && a.second < b.second);};
-    //auto comp = [](auto& a, auto& b) { return a.first > b.first || (a.first == b.first && a.second < b.second);};
     sort(translations2.begin(), translations2.end(), comp);
 
     for (auto it = translations2.begin(); it != translations2.end(); ++it) {
       cout << it->first << "\t" << it->second << endl;
     }
+    **/
+
+    ++line_id;
   }
 
   return 0;
