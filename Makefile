@@ -1,10 +1,11 @@
 CC=g++
-CNN_DIR = /home/austinma/git/cnn
-EIGEN = /opt/tools/eigen-dev/
+CNN_DIR = /home/kevinduh/jsalt/cnn/
+EIGEN = /home/kevinduh/src/NN/eigen
 CNN_BUILD_DIR=$(CNN_DIR)/build
 INCS=-I$(CNN_DIR) -I$(CNN_BUILD_DIR) -I$(EIGEN)
-LIBS=-L$(CNN_BUILD_DIR)/cnn/
-FINAL=-lcnn -lboost_regex -lboost_serialization
+#LIBS=-L$(CNN_BUILD_DIR)/cnn/
+LIBS=-L$(CNN_BUILD_DIR)/cnn/ -L/home/kevinduh/src/UTIL/boost_1_58_0/lib/
+FINAL=-lcnn -lboost_regex -lboost_serialization -lboost_program_options
 CFLAGS=-std=c++1y -Ofast -g -march=native
 #CFLAGS=-std=c++1y -O0 -g -march=native
 BINDIR=bin
