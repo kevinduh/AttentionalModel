@@ -60,6 +60,7 @@ int main(int argc, char** argv) {
     ("alignment_hidden_dim,a", po::value<unsigned>()->default_value(47), "Dimensionality of the hidden layer in the alignment FFNN")
     ("final_hidden_dim,f", po::value<unsigned>()->default_value(57), "Dimensionality of the hidden layer in the final FFNN")
     ("max_iteration", po::value<unsigned>()->default_value(100), "Max iterations for training")
+    ("trainer", po::value<string>()->default_value("sgd"), "Trainer type: sgd, adagrad, adadelta, rmsprop, etc.")
     ;
   po::store(po::parse_command_line(argc, argv, opts), vm);
   po::notify(vm);
@@ -83,12 +84,33 @@ int main(int argc, char** argv) {
   AttentionalModel attentional_model;
   attentional_model.SetParams(vm);
   attentional_model.Initialize(model, bitext.source_vocab.size(), bitext.target_vocab.size());
-  //SimpleSGDTrainer sgd(&model, 0.0, 0.1);
-  //AdagradTrainer sgd(&model, 0.0, 0.1);
-  AdadeltaTrainer sgd(&model, 0.0);
-  //AdadeltaTrainer sgd(&model, 0.0, 1e-6, 0.992);
-  //RmsPropTrainer sgd(&model, 0.0, 0.1);
-  sgd.eta_decay = 0.05;
+
+  Trainer* sgd = nullptr;
+  string trainertype(vm["trainer"].as<string>());
+  if (trainertype.compare("adadelta") == 0) { 
+    sgd = new AdadeltaTrainer(&model, 0.0);
+    cerr << "Training with AdadeltaTrainer" << endl;
+  }
+  else if (trainertype.compare("adam") == 0) {
+    sgd = new AdamTrainer(&model, 0.0); 
+    cerr << "Training with AdamTrainer" << endl;
+  }
+  else if (trainertype.compare("rmsprop") == 0) {
+    sgd = new RmsPropTrainer(&model, 0.0);
+    cerr << "Training with RmsPropTrainer" << endl;
+  }
+  else if (trainertype.compare("adagrad") == 0) { 
+    sgd = new AdagradTrainer(&model, 0.0);
+    cerr << "Training with AdagradTrainer" << endl;  }
+  else if (trainertype.compare("sgd") == 0) {
+    sgd = new SimpleSGDTrainer(&model);
+    cerr << "Training with SimpleSGDTrainer" << endl;
+  }
+  else {
+    cerr << "Specified trainer " << trainertype << " is not available. Try sgd, adagrad, adadelta, etc." << endl;
+    exit(1);
+  }
+  sgd->eta_decay = 0.05;
 
   cerr << "Training model...\n";
   unsigned minibatch_count = 0;
@@ -108,7 +130,7 @@ int main(int argc, char** argv) {
       loss += as_scalar(hg.forward());
       hg.backward();
       if (++minibatch_count == minibatch_size) {
-        sgd.update(1.0 / minibatch_size);
+        sgd->update(1.0 / minibatch_size);
         minibatch_count = 0;
       }
       if (ctrlc_pressed) {
@@ -119,7 +141,7 @@ int main(int argc, char** argv) {
       break;
     }
     cerr << "Iteration " << iteration << " loss: " << loss << " (perp=" << loss/word_count << ") ";
-    sgd.update_epoch();
+    sgd->update_epoch();
   }
 
   boost::archive::text_oarchive oa(cout);
@@ -128,5 +150,6 @@ int main(int argc, char** argv) {
   oa << attentional_model;
   oa << model;
 
+  delete sgd;
   return 0;
 }
