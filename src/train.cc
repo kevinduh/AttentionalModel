@@ -46,6 +46,18 @@ void shuffle(Bitext& bitext, RNG& g) {
   bitext.target_sentences = target;
 }
 
+void Serialize(Bitext& bitext, AttentionalModel& attentional_model, Model& model) {
+  ftruncate(fileno(stdout), 0);
+  fseek(stdout, 0, SEEK_SET); 
+
+  boost::archive::text_oarchive oa(cout);
+  oa & bitext.source_vocab;
+  oa & bitext.target_vocab;
+  oa << attentional_model;
+  oa << model;
+
+}
+
 int main(int argc, char** argv) {
 
   namespace po = boost::program_options;
@@ -118,17 +130,27 @@ int main(int argc, char** argv) {
   for (unsigned iteration = 0; iteration < vm["max_iteration"].as<unsigned>() || false; iteration++) {
     Timer iteration_timer("time:");
     unsigned word_count = 0;
+    unsigned tword_count = 0;
     shuffle(bitext, rndeng);
     double loss = 0.0;
+    double tloss = 0.0;
     for (unsigned i = 0; i < bitext.size(); ++i) {
       //cerr << "Reading sentence pair #" << i << endl;
       vector<WordId> source_sentence = bitext.source_sentences[i];
       vector<WordId> target_sentence = bitext.target_sentences[i];
       word_count += bitext.target_sentences[i].size() - 1; // Minus one for <s>
+      tword_count += bitext.target_sentences[i].size() - 1; // Minus one for <s>
       ComputationGraph hg;
       attentional_model.BuildGraph(source_sentence, target_sentence, hg);
-      loss += as_scalar(hg.forward());
+      double l = as_scalar(hg.forward());
+      loss += l;
+      tloss += l;
       hg.backward();
+      if (i % 50 == 0) {
+        cerr << "--" << iteration << '.' << ((float)i / bitext.size()) << " loss: " << tloss << " (perp=" << exp(tloss/tword_count) << ")" << endl;
+        tloss = 0;
+        tword_count = 0;
+      }
       if (++minibatch_count == minibatch_size) {
         sgd->update(1.0 / minibatch_size);
         minibatch_count = 0;
@@ -140,16 +162,13 @@ int main(int argc, char** argv) {
     if (ctrlc_pressed) {
       break;
     }
-    cerr << "Iteration " << iteration << " loss: " << loss << " (perp=" << loss/word_count << ") ";
-    sgd->update_epoch();
+
+    cerr << "Iteration " << iteration << " loss: " << loss << " (perp=" << exp(loss/word_count) << ")" << endl;
+    sgd.update_epoch();
+    Serialize(bitext, attentional_model, model);
   }
 
-  boost::archive::text_oarchive oa(cout);
-  oa & bitext.source_vocab;
-  oa & bitext.target_vocab;
-  oa << attentional_model;
-  oa << model;
-
+  Serialize(bitext, attentional_model, model);
   delete sgd;
   return 0;
 }
