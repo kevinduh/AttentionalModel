@@ -194,8 +194,9 @@ KBestList<vector<WordId> > AttentionalModel::TranslateKBest(const vector<WordId>
   Expression zeroth_context = tanh(zeroth_context_untransformed);
   /* Up until here this is all boiler plate */
 
-  KBestList<vector<WordId> > completed_hyps(beam_size);
+  KBestList<vector<WordId> > completed_hyps(k);
   KBestList<vector<WordId> > top_hyps(beam_size);
+  assert(k<=beam_size);
   top_hyps.add(0.0, {});
 
   // Invariant: each element in top_hyps should have a length of "length"
@@ -252,6 +253,8 @@ KBestList<vector<WordId> > AttentionalModel::TranslateKBest(const vector<WordId>
     }
     top_hyps = new_hyps;
   }
+
+  
   return completed_hyps;
 }
 
