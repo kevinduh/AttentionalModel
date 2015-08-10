@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
     }
 
     KBestList<vector<WordId> > kbest = attentional_model.TranslateKBest(source, ktSOS, ktEOS, kbest_size, beam_size, max_length);
+    unsigned kbest_id=0;
     for (auto& scored_hyp : kbest.hypothesis_list()) {
       double score = scored_hyp.first;
       vector<WordId> hyp = scored_hyp.second;
@@ -121,10 +122,11 @@ int main(int argc, char** argv) {
         words[i] = target_vocab.Convert(hyp[i]);
       }
       string translation = boost::algorithm::join(words, " ");
-      cerr << line_id << " " << score << "\t" << translation << endl;
-      cout << translation << endl;
+      cerr << line_id << " " << kbest_id << " " << score << "\t" << translation << endl;
+      cout << line_id << " " << kbest_id << " " << score << "\t" << translation << endl;
+      ++kbest_id;
     }
-    continue;
+    
 
     // TODO: Work with sampling later. Just beam search now
     /**

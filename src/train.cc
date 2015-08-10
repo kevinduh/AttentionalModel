@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
     }
 
     cerr << "Iteration " << iteration << " loss: " << loss << " (perp=" << exp(loss/word_count) << ")" << endl;
-    sgd.update_epoch();
+    sgd->update_epoch();
     Serialize(bitext, attentional_model, model);
   }
 
