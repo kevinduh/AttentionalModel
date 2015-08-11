@@ -12,7 +12,7 @@ BINDIR=bin
 SRCDIR=src
 
 .PHONY: clean
-all: $(BINDIR)/lstmlm $(BINDIR)/train $(BINDIR)/predict $(BINDIR)/sandbox $(BINDIR)/align
+all: $(BINDIR)/lstmlm $(BINDIR)/train $(BINDIR)/predict $(BINDIR)/sandbox $(BINDIR)/align $(BINDIR)/score_bitext
 
 $(BINDIR)/sandbox: $(BINDIR)/sandbox.o
 	mkdir -p $(BINDIR)
@@ -25,6 +25,10 @@ $(BINDIR)/train: $(BINDIR)/train.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o
 $(BINDIR)/predict: $(BINDIR)/predict.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o
 	mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $(LIBS) $(INCS) $(BINDIR)/predict.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o -o $(BINDIR)/predict $(FINAL)
+
+$(BINDIR)/score_bitext: $(BINDIR)/score_bitext.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o
+	mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) $(LIBS) $(INCS) $(BINDIR)/score_bitext.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o -o $(BINDIR)/score_bitext $(FINAL)
 
 $(BINDIR)/align: $(BINDIR)/align.o $(BINDIR)/attentional.o $(BINDIR)/bitext.o
 	mkdir -p $(BINDIR)
@@ -41,6 +45,10 @@ $(BINDIR)/train.o: $(SRCDIR)/train.cc $(SRCDIR)/attentional.h $(SRCDIR)/bitext.h
 $(BINDIR)/predict.o: $(SRCDIR)/predict.cc $(SRCDIR)/attentional.h
 	mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $(INCS) -c $(SRCDIR)/predict.cc -o $(BINDIR)/predict.o
+
+$(BINDIR)/score_bitext.o: $(SRCDIR)/score_bitext.cc $(SRCDIR)/attentional.h
+	mkdir -p $(BINDIR)
+	$(CC) $(CFLAGS) $(INCS) -c $(SRCDIR)/score_bitext.cc -o $(BINDIR)/score_bitext.o
 
 $(BINDIR)/align.o: $(SRCDIR)/align.cc $(SRCDIR)/attentional.h
 	mkdir -p $(BINDIR)
